@@ -16,14 +16,15 @@ const (
 
 // Config holds the application configuration
 type Config struct {
-	Path          string
-	Workers       int
-	IncludeHidden bool
-	ExcludeDirs   []string
-	OutputFormat  string
-	ShowErrors    bool
-	Verbose       bool
-	Quiet         bool
+	Path            string
+	Workers         int
+	IncludeHidden   bool
+	ExcludeDirs     []string
+	ExcludePatterns []string
+	OutputFormat    string
+	ShowErrors      bool
+	Verbose         bool
+	Quiet           bool
 }
 
 func main() {
@@ -61,6 +62,11 @@ func main() {
 	// Add any additional exclude directories
 	for _, dir := range config.ExcludeDirs {
 		walker.AddExcludeDir(dir)
+	}
+
+	// Add exclude patterns
+	for _, pattern := range config.ExcludePatterns {
+		walker.AddExcludePattern(pattern)
 	}
 
 	if config.Verbose {
@@ -136,6 +142,11 @@ func parseFlags() *Config {
 	flag.StringVar(&excludeDirs, "exclude", "", "Comma-separated list of directories to exclude")
 	flag.StringVar(&excludeDirs, "x", "", "Comma-separated list of directories to exclude (shorthand)")
 
+	// Custom exclude patterns
+	var excludePatterns string
+	flag.StringVar(&excludePatterns, "ignore", "", "Comma-separated list of patterns to exclude files (e.g., \"*_test.go,*.log\")")
+	flag.StringVar(&excludePatterns, "i", "", "Comma-separated list of patterns to exclude files (shorthand)")
+
 	// Version flag
 	version := flag.Bool("version", false, "Print version information")
 	versionShort := flag.Bool("V", false, "Print version information (shorthand)")
@@ -168,6 +179,11 @@ func parseFlags() *Config {
 		config.ExcludeDirs = splitAndTrim(excludeDirs, ",")
 	}
 
+	// Parse exclude patterns
+	if excludePatterns != "" {
+		config.ExcludePatterns = splitAndTrim(excludePatterns, ",")
+	}
+
 	// Handle positional argument (path)
 	args := flag.Args()
 	if len(args) > 0 {
@@ -189,6 +205,7 @@ Options:
   -H, --hidden            Include hidden files and directories
   -f, --format <format>   Output format: default, json, compact, formatted
   -x, --exclude <dirs>    Comma-separated list of directories to exclude
+  -i, --ignore <patterns> Comma-separated list of patterns to exclude files
   -e, --errors            Show detailed error messages
   -v, --verbose           Enable verbose output
   -q, --quiet             Suppress non-essential output
@@ -201,6 +218,7 @@ Examples:
   %s -f json .            Output results in JSON format
   %s -w 8 -H .            Use 8 workers and include hidden files
   %s -x "test,docs" .     Exclude test and docs directories
+  %s -i "users_*.go,*log" . Exclude files matching patterns
 
 Supported Languages:
   Go, JavaScript, TypeScript, Python, Java, C, C++, C#, Ruby, PHP,
@@ -208,7 +226,7 @@ Supported Languages:
   JSON, Markdown, XML, Vue, Svelte, Lua, R, Perl, Elixir, Erlang,
   Haskell, Clojure, TOML, INI, Terraform, Protocol Buffers, GraphQL
 
-`, AppName, AppName, AppName, AppName, AppName, AppName, AppName)
+`, AppName, AppName, AppName, AppName, AppName, AppName, AppName, AppName)
 }
 
 func splitAndTrim(s string, sep string) []string {

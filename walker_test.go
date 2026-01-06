@@ -304,3 +304,86 @@ func TestWalkerConcurrency(t *testing.T) {
 		t.Errorf("Expected 100 files, got %d", len(stats))
 	}
 }
+
+func TestWalkerExcludePatterns(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "walker-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create files
+	files := []string{
+		"main.go",
+		"users_api.go",
+		"users_test.go",
+		"transactions.sql",
+		"old_transactions.sql",
+		"script.sh",
+		"data/backup.sh",
+		"data/info.txt",
+	}
+
+	for _, f := range files {
+		fullPath := filepath.Join(tmpDir, f)
+		dir := filepath.Dir(fullPath)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("Failed to create dir: %v", err)
+		}
+		if err := os.WriteFile(fullPath, []byte("content"), 0644); err != nil {
+			t.Fatalf("Failed to create file: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		patterns []string
+		expected int // Number of files that should remain
+	}{
+		{
+			name:     "Exclude by specific prefix",
+			patterns: []string{"users_*.go"},
+			expected: 6, // Excludes users_api.go, users_test.go
+		},
+		{
+			name:     "Exclude by suffix",
+			patterns: []string{"*.sql"},
+			expected: 6, // Excludes transactions.sql, old_transactions.sql
+		},
+		{
+			name:     "Exclude by middle match",
+			patterns: []string{"*transactions*"},
+			expected: 6, // Excludes transactions.sql, old_transactions.sql
+		},
+		{
+			name:     "Exclude by log pattern",
+			patterns: []string{"*.sh"},
+			expected: 6, // Excludes script.sh, backup.sh
+		},
+		{
+			name:     "Multiple patterns",
+			patterns: []string{"users_*.go", "*.sh", "*transactions*"},
+			expected: 2, // Only main.go and data/info.txt remain
+		},
+		{
+			name:     "Exclude directory by pattern",
+			patterns: []string{"data"},
+			expected: 6, // Excludes data/backup.sh, data/info.txt
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			walker := NewWalker(tmpDir, 2)
+			walker.SetExcludePatterns(tt.patterns)
+			stats, _ := walker.Walk()
+
+			if len(stats) != tt.expected {
+				t.Errorf("With patterns %v, expected %d files, got %d", tt.patterns, tt.expected, len(stats))
+				for _, s := range stats {
+					t.Logf("Found: %s", s.FilePath)
+				}
+			}
+		})
+	}
+}

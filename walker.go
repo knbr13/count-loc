@@ -17,15 +17,16 @@ type FileJob struct {
 
 // Walker handles concurrent directory traversal and file processing
 type Walker struct {
-	rootPath       string
-	numWorkers     int
-	excludeDirs    map[string]bool
-	includeHidden  bool
-	results        []*FileStats
-	errors         []error
-	mu             sync.Mutex
-	processedFiles int
-	skippedFiles   int
+	rootPath        string
+	numWorkers      int
+	excludeDirs     map[string]bool
+	excludePatterns []string
+	includeHidden   bool
+	results         []*FileStats
+	errors          []error
+	mu              sync.Mutex
+	processedFiles  int
+	skippedFiles    int
 }
 
 // NewWalker creates a new Walker instance
@@ -55,9 +56,10 @@ func NewWalker(rootPath string, numWorkers int) *Walker {
 			"coverage":     true,
 			".nyc_output":  true,
 		},
-		includeHidden: false,
-		results:       make([]*FileStats, 0),
-		errors:        make([]error, 0),
+		includeHidden:   false,
+		excludePatterns: make([]string, 0),
+		results:         make([]*FileStats, 0),
+		errors:          make([]error, 0),
 	}
 }
 
@@ -72,6 +74,16 @@ func (w *Walker) SetExcludeDirs(dirs []string) {
 // AddExcludeDir adds a directory to the exclude list
 func (w *Walker) AddExcludeDir(dir string) {
 	w.excludeDirs[dir] = true
+}
+
+// SetExcludePatterns sets custom patterns to exclude files
+func (w *Walker) SetExcludePatterns(patterns []string) {
+	w.excludePatterns = patterns
+}
+
+// AddExcludePattern adds a pattern to the exclude list
+func (w *Walker) AddExcludePattern(pattern string) {
+	w.excludePatterns = append(w.excludePatterns, pattern)
 }
 
 // SetIncludeHidden sets whether to include hidden files
@@ -122,11 +134,32 @@ func (w *Walker) Walk() ([]*FileStats, []error) {
 				return filepath.SkipDir
 			}
 
+			// Check against exclude patterns
+			for _, pattern := range w.excludePatterns {
+				match, err := filepath.Match(pattern, dirName)
+				if err == nil && match {
+					LogDebug("Skipping directory matching pattern %s: %s", pattern, path)
+					return filepath.SkipDir
+				}
+			}
+
 			return nil
 		}
 
 		fileName := info.Name()
 		ext := strings.ToLower(filepath.Ext(path))
+
+		// Check against exclude patterns
+		for _, pattern := range w.excludePatterns {
+			match, err := filepath.Match(pattern, fileName)
+			if err == nil && match {
+				LogDebug("Skipping file matching pattern %s: %s", pattern, path)
+				w.mu.Lock()
+				w.skippedFiles++
+				w.mu.Unlock()
+				return nil
+			}
+		}
 
 		// Skip binary files first
 		if IsBinaryExtension(ext) {
